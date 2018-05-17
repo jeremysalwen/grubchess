@@ -395,7 +395,7 @@ Move random_move(const Board* board) {
 
 Move minimax_engine(const Board* board) {
   Move best_move;
-  int best_score = minimax_score(board, 6, &best_move);
+  int best_score = minimax_score(board, 2, &best_move);
   printf("Found move with score %d\n", best_score);
   return best_move;
 }

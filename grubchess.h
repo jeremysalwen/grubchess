@@ -48,6 +48,7 @@ void set_square(Board* board, Position position, Square value);
 void apply_valid_move(Board* board, Position from, Position to);
 bool occupied(const Board* board, Position position);
 
+char square_to_char(Square square);
 void print_board(const Board* board);
 void print_move(const Board* board, Position from, Position to);
 typedef void ValidMovesCallback(const Board*, Position, Position, void*);

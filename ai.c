@@ -39,13 +39,12 @@ void sum_threats_callback(const Board* board, Position from, Position to, void* 
 }
 int score_threats(const Board* board) {
   Board fixed_move = *board;
-  ThreatsBoard threats_on_white;
-  ThreatsBoard threats_on_black;
+  ThreatsBoard threats;
+
   for(int rank=0; rank<BOARD_WIDTH; rank++) {
     for(int file=0; file<BOARD_WIDTH; file++) {
       Position pos = {rank, file};
-      *get_threat_board(&threats_on_white, pos) = 0;
-      *get_threat_board(&threats_on_black, pos) = 0;
+      *get_threat_board(&threats, pos) = 0;
     }
   }
   
@@ -58,13 +57,13 @@ int score_threats(const Board* board) {
       Square white_square = square;
       white_square.color = WHITE;
       set_square(&fixed_move, pos, white_square);
-      valid_moves_from(&fixed_move, pos, sum_threats_callback, &threats_on_black);
+      valid_moves_from(&fixed_move, pos, sum_threats_callback, &threats);
       
       fixed_move.move = BLACK;
       Square black_square = square;
       black_square.color = BLACK;
       set_square(&fixed_move, pos, black_square);
-      valid_moves_from(&fixed_move, pos, sum_threats_callback, &threats_on_white);
+      valid_moves_from(&fixed_move, pos, sum_threats_callback, &threats);
 
       set_square(&fixed_move, pos, square);
     }
@@ -76,10 +75,10 @@ int score_threats(const Board* board) {
       Square square = get_square(&fixed_move, pos);
       if(square.piece != EMPTY) {
         int valence = square.color == WHITE ? 1:-1;
-        int total_threat = *get_threat_board(&threats_on_white, pos)
-                           - *get_threat_board(&threats_on_black, pos);
+        int threat = *get_threat_board(&threats, pos);
+        //printf("total threat! %c %d %d\n", square_to_char(square), threat, threat*valence);
 
-        if(total_threat * valence > 0) {
+        if(threat * valence > 0) {
           total_score -= valence * CLASSIC_PIECE_VALUE[square.piece] * SCORE_FRAC;
         }
       }
@@ -87,11 +86,13 @@ int score_threats(const Board* board) {
   }
   
   // Remove 80% of score for undefended pieces.
-  return total_score*8/10;
+  total_score = total_score * 8 / 10;
+  //  printf("total score %d\n", total_score);
+  return total_score;
 }
 
 int score(const Board* board) {
-  return score_material(board);// + score_threats(board);
+  return score_material(board) + score_threats(board);
 }
 
 bool score_is_checkmate(int score) {
