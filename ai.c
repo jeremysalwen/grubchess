@@ -34,17 +34,18 @@ void sum_threats_callback(const Board* board, Position from, Position to, void* 
   Square square = get_square(board, to);
   if(square.piece != EMPTY) {
     int* threatlevel = get_threat_board(threats, to);
-    *threatlevel += board->move == WHITE ? 1:-1;
+    *threatlevel += 1;
   }
 }
 int score_threats(const Board* board) {
   Board fixed_move = *board;
-  ThreatsBoard threats;
-
+  ThreatsBoard white_threats;
+  ThreatsBoard black_threats;
   for(int rank=0; rank<BOARD_WIDTH; rank++) {
     for(int file=0; file<BOARD_WIDTH; file++) {
       Position pos = {rank, file};
-      *get_threat_board(&threats, pos) = 0;
+      *get_threat_board(&white_threats, pos) = 0;
+      *get_threat_board(&black_threats, pos) = 0;
     }
   }
   
@@ -52,18 +53,19 @@ int score_threats(const Board* board) {
     for(int file=0; file<BOARD_WIDTH; file++) {
       Position pos = {rank, file};
       Square square = get_square(&fixed_move, pos);
-      
+      ThreatsBoard* threats = square.color==WHITE?&white_threats : &black_threats;
+
       fixed_move.move = WHITE;
       Square white_square = square;
       white_square.color = WHITE;
       set_square(&fixed_move, pos, white_square);
-      valid_moves_from(&fixed_move, pos, sum_threats_callback, &threats);
+      valid_moves_from(&fixed_move, pos, sum_threats_callback, threats);
       
       fixed_move.move = BLACK;
       Square black_square = square;
       black_square.color = BLACK;
       set_square(&fixed_move, pos, black_square);
-      valid_moves_from(&fixed_move, pos, sum_threats_callback, &threats);
+      valid_moves_from(&fixed_move, pos, sum_threats_callback, threats);
 
       set_square(&fixed_move, pos, square);
     }
@@ -75,10 +77,11 @@ int score_threats(const Board* board) {
       Square square = get_square(&fixed_move, pos);
       if(square.piece != EMPTY) {
         int valence = square.color == WHITE ? 1:-1;
-        int threat = *get_threat_board(&threats, pos);
-        //printf("total threat! %c %d %d\n", square_to_char(square), threat, threat*valence);
-
-        if(threat * valence > 0) {
+        int white_threat = *get_threat_board(&white_threats, pos);
+        int black_threat = *get_threat_board(&black_threats, pos);
+        int threat = white_threat - black_threat;
+        //printf("total threat! %c %d %d %d %d\n", square_to_char(square), white_threat, black_threat, threat, threat*valence);
+        if(threat * valence < 0) {
           total_score -= valence * CLASSIC_PIECE_VALUE[square.piece] * SCORE_FRAC;
         }
       }
@@ -87,7 +90,7 @@ int score_threats(const Board* board) {
   
   // Remove 80% of score for undefended pieces.
   total_score = total_score * 8 / 10;
-  //  printf("total score %d\n", total_score);
+  //printf("total score %d\n", total_score);
   return total_score;
 }
 
@@ -109,13 +112,14 @@ typedef struct SearchCallbackData {
 
 void search_callback(const Board* board, Position from, Position to, void* d) {
   SearchCallbackData* data = (SearchCallbackData*)d;
+  int valence = board->move == WHITE? 1: -1;
+
   Board new_board = *board;
   //print_move(board, from, to);
   apply_valid_move(&new_board, from, to);
   Move ignored_move; // We don't care what the best child move is
   int new_score = minimax_score(&new_board, data->max_depth, &ignored_move);
-  
-  int valence = board->move == WHITE? 1: -1;
+
   //printf("valence %d best_score %d %d\n", valence, data->best_score, new_score);
   if((new_score - data->best_score) * valence > 0) {
     //printf("New best score!\n");
@@ -134,9 +138,7 @@ int minimax_score(const Board* board, int max_depth, Move* best_move) {
   int my_score = score(board); // Default score is our heuristic function.
   if(max_depth ==0 || my_score > CHECKMATE_SCORE_THRESHOLD || my_score < -CHECKMATE_SCORE_THRESHOLD) {
     //printf("Leaf node score %d!\n", my_score);
-
     *best_move = nullmove;
-
     return my_score;
   }
     

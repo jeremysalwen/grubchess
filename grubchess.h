@@ -37,6 +37,9 @@ typedef struct Square {
 typedef struct Board {
   enum Color move;
   Square squares[BOARD_WIDTH * BOARD_WIDTH];
+
+  // Second index corresponds to A and H file, respectively.
+  bool can_castle[NUM_COLORS][2];
 } Board;
 
 typedef struct Move {

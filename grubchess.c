@@ -47,7 +47,7 @@ bool empty(const Board* board, Position position) {
 int advance_rank(enum Color color) {
   switch(color) {
     case WHITE:
-      return 1;
+        return 1;
     case BLACK:
       return -1;
     default:
@@ -66,8 +66,12 @@ void fill_rank(Board* board, int rank, Square square) {
 
 void reset_board(Board* board) {
   board->move = WHITE; // White to move.
+  board->can_castle[WHITE][0] = true;
+  board->can_castle[BLACK][0] = true;
+  board->can_castle[WHITE][1] = true;
+  board->can_castle[BLACK][1] = true;
   
-  enum Piece piecerow[BOARD_WIDTH] = {ROOK, KNIGHT, BISHOP, KING, QUEEN, BISHOP, KNIGHT, ROOK };
+  enum Piece piecerow[BOARD_WIDTH] = {ROOK, KNIGHT, BISHOP, QUEEN, KING, BISHOP, KNIGHT, ROOK };
 
   // 8th Rank
   for(int i=0; i<BOARD_WIDTH; i++) {
@@ -159,15 +163,39 @@ void print_board(const Board* board) {
 
 
 void apply_valid_move(Board* board, Position from, Position to) {
+  Square empty = {EMPTY, BLACK};
   Square square =  get_square(board, from);
   if(square.piece == PAWN) {
     if(to.rank == 7 || to.rank == 0) {
       square.piece = QUEEN;
     }
   }
+
+  // If it's from one of the four corners of the board.
+  if(square.piece == ROOK
+     && (from.file == 8 || from.file == 0)
+     && (from.rank == 8 || from.rank == 0)) {
+    bool which_rook = !!from.file; // 0 = A file, 1 = H file
+    board->can_castle[board->move][which_rook] = false;
+  }
+  
+  if(square.piece == KING) {
+    board->can_castle[board->move][0] = false;
+    board->can_castle[board->move][1] = false;
+
+    // Handle the rook moves for castling moves.
+    int file_diff = to.file - from.file;
+    if(abs(file_diff) > 1) {
+      int rook_file_from = (file_diff > 0) * 7;
+      int rook_file_to = from.file + file_diff/2;
+      set_square(board, (Position) {to.rank, rook_file_from}, empty);
+      set_square(board, (Position) {to.rank, rook_file_to}, (Square) {ROOK, square.color});
+    }
+  }
+  
   set_square(board, to, square);
   
-  Square empty = {EMPTY, BLACK};
+
   set_square(board, from, empty);
 
   board->move = enemy_color(board->move);
@@ -227,14 +255,14 @@ void valid_moves_from(const Board* board, Position position, ValidMovesCallback 
     case PAWN:
       {
         Position front = {position.rank + advance_rank(square.color), position.file};
-        try_move_peaceful(board, position, front, callback, callback_data);
-
-        if((board->move == WHITE && position.rank == 1)
-           || (board->move == BLACK && position.rank==6)) {
-          Position two_ahead = {position.rank + advance_rank(square.color)*2, position.file};
-          try_move_peaceful(board, position, two_ahead, callback, callback_data);
+        if(try_move_peaceful(board, position, front, callback, callback_data)) {
+          //try moving two ahead.
+          if((board->move == WHITE && position.rank == 1)
+             || (board->move == BLACK && position.rank==6)) {
+            Position two_ahead = {position.rank + advance_rank(square.color)*2, position.file};
+            try_move_peaceful(board, position, two_ahead, callback, callback_data);
+          }
         }
-
         Position left = {position.rank + advance_rank(square.color), position.file-1};
         try_move_capture(board, position, left, callback, callback_data);
 
@@ -260,7 +288,7 @@ void valid_moves_from(const Board* board, Position position, ValidMovesCallback 
         for(int j = 0; j<2; j++) {
           int rank_step = i *2-1; // {-1, 1}
           int file_step = j *2-1; // {-1, 1}
-          for(int i=1; i<7; i++) {
+          for(int i=1; i<8; i++) {
             Position pos = {position.rank + rank_step * i, position.file + file_step *i};
             try_move_capture(board, position, pos, callback, callback_data);
             if(!try_move_peaceful(board, position, pos, callback, callback_data)) {
@@ -273,14 +301,14 @@ void valid_moves_from(const Board* board, Position position, ValidMovesCallback 
     case ROOK:
       for(int i = 0; i<2; i++) {
         int inc = i *2-1; // {-1, 1}
-        for(int i=1; i<7; i++) {
+        for(int i=1; i<8; i++) {
           Position pos = {position.rank + i * inc, position.file};
           try_move_capture(board, position, pos, callback, callback_data);
             if(!try_move_peaceful(board, position, pos, callback, callback_data)) {
               break; // We can't jump over pieces.
             }
         }
-        for(int i=1; i<7; i++) {
+        for(int i=1; i<8; i++) {
           Position pos = {position.rank, position.file +i * inc};
           try_move_capture(board, position, pos, callback, callback_data);
           if(!try_move_peaceful(board, position, pos, callback, callback_data)) {
@@ -295,7 +323,7 @@ void valid_moves_from(const Board* board, Position position, ValidMovesCallback 
           if(fwd == 0 && side==0) {
             continue;
           }
-          for(int i=1; i<7; i++) {
+          for(int i=1; i<8; i++) {
             Position pos = {position.rank + i * fwd, position.file + i*side};
             try_move_capture(board, position, pos, callback, callback_data);
             if(!try_move_peaceful(board, position, pos, callback, callback_data)) {
@@ -306,12 +334,34 @@ void valid_moves_from(const Board* board, Position position, ValidMovesCallback 
       }
       break;
     case KING:
+      // This guards against false "castling" when computing threats.
+      // King must be in starting position for his color.
+      if(position.file == 4 && position.rank == board->move * 7) {
+        for(int rook = 0; rook < 2; rook++) {
+          int direction = rook? 1 : -1;
+          
+          if(board->can_castle[board->move][rook]) {
+            bool clear = true;
+            for(int file = position.file + direction; file != rook * 7; file+=direction) {
+              Position pos = {position.rank, file};
+              if(get_square(board, pos).piece != EMPTY) {
+                clear = false;
+              }
+            }
+            if(clear) {
+              Position final = {position.rank, position.file + direction * 2};
+              callback(board, position, final, callback_data);
+            }
+          }
+        }
+      }
+      
       for(int fwd=-1; fwd<2; fwd++) {
         for(int side=-1; side<2; side++) {
           if(fwd == 0 && side==0) {
             continue;
           }
-          Position pos = {position.rank + fwd, position.file * side};
+          Position pos = {position.rank + fwd, position.file + side};
           try_move_any(board, position, pos, callback, callback_data);
         }
       }
@@ -395,30 +445,37 @@ Move random_move(const Board* board) {
 
 Move minimax_engine(const Board* board) {
   Move best_move;
-  int best_score = minimax_score(board, 2, &best_move);
+  int best_score = minimax_score(board, 4, &best_move);
   printf("Found move with score %d\n", best_score);
   return best_move;
 }
 
 Move human_engine(const Board* board) {
   Move move;
-  do {
+  char* line = NULL;
+  size_t line_size = 0;
+  while(true) {
     printf("Enter move: ");
+    getline(&line, &line_size, stdin);
     
     int from_rank, to_rank;
     char from_file, to_file;
-    scanf("%c%d %c%d", &from_file, &from_rank, &to_file, &to_rank);
-    
-    move.from.rank = from_rank - 1;
-    move.from.file = from_file - 'a';
-    move.to.rank = to_rank - 1;
-    move.to.file = to_file - 'a';
-  } while(!move_valid(board, move));
+    if(sscanf(line, "%c%d %c%d", &from_file, &from_rank, &to_file, &to_rank) == 4) {          
+      move.from.rank = from_rank - 1;
+      move.from.file = from_file - 'a';
+      move.to.rank = to_rank - 1;
+      move.to.file = to_file - 'a';
+      if(move_valid(board, move)) {
+        break;
+      }
+    }
+  }
+  free(line);
   return move; 
 }
 
 Move human_vs_computer_engine(const Board* board) {
-  if(board->move == WHITE) {
+  if(board->move == BLACK) {
     return human_engine(board);
   } else {
     return minimax_engine(board);
@@ -450,6 +507,6 @@ int main(int argc, char** argv) {
 
   Board board;
   reset_board(&board);
-  play_chess(&board, minimax_engine);
+  play_chess(&board, human_vs_computer_engine);
   print_board(&board); 
 }
