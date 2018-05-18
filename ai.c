@@ -156,7 +156,7 @@ int minimax_score(const Board* board, int max_depth, int alpha, int beta, Move* 
   valid_moves(board, search_callback, &data);
   if(data.alphabeta[WHITE] == alpha && data.alphabeta[BLACK] == beta) {
     data.best_move = nullmove;
-    return 0;
+    return data.alphabeta[board->move];
   }
 
   *best_move = data.best_move;
