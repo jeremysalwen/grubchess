@@ -445,7 +445,7 @@ Move random_move(const Board* board) {
 
 Move minimax_engine(const Board* board) {
   Move best_move;
-  int best_score = minimax_score(board, 4, &best_move);
+  int best_score = minimax_score(board, 4, WORST_POSSIBLE_SCORE, BEST_POSSIBLE_SCORE, &best_move);
   printf("Found move with score %d\n", best_score);
   return best_move;
 }
@@ -507,6 +507,6 @@ int main(int argc, char** argv) {
 
   Board board;
   reset_board(&board);
-  play_chess(&board, human_vs_computer_engine);
+  play_chess(&board, minimax_engine);
   print_board(&board); 
 }

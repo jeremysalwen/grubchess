@@ -3,6 +3,8 @@
 
 #include "grubchess.h"
 
-int minimax_score(const Board* board, int max_depth, Move* best_move);
+#define WORST_POSSIBLE_SCORE -100000
+#define BEST_POSSIBLE_SCORE 100000
+int minimax_score(const Board* board, int max_depth, int alpha, int beta, Move* best_move);
 
 #endif

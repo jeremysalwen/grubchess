@@ -104,7 +104,7 @@ bool score_is_checkmate(int score) {
 
 typedef struct SearchCallbackData {
   int max_depth;
-  int best_score;
+  int alphabeta[NUM_COLORS];
   Move best_move;
 } SearchCallbackData;
 
@@ -112,25 +112,32 @@ typedef struct SearchCallbackData {
 
 void search_callback(const Board* board, Position from, Position to, void* d) {
   SearchCallbackData* data = (SearchCallbackData*)d;
+  if(data->alphabeta[WHITE] >= data->alphabeta[BLACK]) {
+    //printf("Pruned %d %d\n", data->alphabeta[WHITE], data->alphabeta[BLACK]);
+    //return;
+  }
+
   int valence = board->move == WHITE? 1: -1;
 
   Board new_board = *board;
   //print_move(board, from, to);
   apply_valid_move(&new_board, from, to);
   Move ignored_move; // We don't care what the best child move is
-  int new_score = minimax_score(&new_board, data->max_depth, &ignored_move);
+  int new_score = minimax_score(&new_board, data->max_depth, data->alphabeta[WHITE], data->alphabeta[BLACK], &ignored_move);
+ 
+  
+  //printf("valence %d best_score %d %d %d move %d\n", valence, data->alphabeta[WHITE], data->alphabeta[BLACK], new_score, board->move);
 
-  //printf("valence %d best_score %d %d\n", valence, data->best_score, new_score);
-  if((new_score - data->best_score) * valence > 0) {
-    //printf("New best score!\n");
-    data->best_score = new_score;
-    Move move = {from, to};
+  Move move = {from, to};
+  if((new_score - data->alphabeta[board->move]) * valence > 0) {
+    data->alphabeta[board->move] = new_score;
     data->best_move = move;
   }
+  //printf("valence %d best_score %d %d %d gap %d\n", valence, data->alphabeta[WHITE], data->alphabeta[BLACK], new_score, (new_score - data->alphabeta[board->move]));
 }
 
 
-int minimax_score(const Board* board, int max_depth, Move* best_move) {
+int minimax_score(const Board* board, int max_depth, int alpha, int beta, Move* best_move) {
   Move nullmove = {{0,0},{0,0}};
 
   //printf("Searching, with depth %d\n", max_depth);
@@ -144,17 +151,16 @@ int minimax_score(const Board* board, int max_depth, Move* best_move) {
     
   SearchCallbackData data;
   data.max_depth = max_depth-1;
-  int worst_possible_score = board->move == WHITE ? -100000 : 100000;
-  data.best_score = worst_possible_score;
+  data.alphabeta[WHITE] = alpha;
+  data.alphabeta[BLACK] = beta;
   valid_moves(board, search_callback, &data);
-  if(data.best_score == worst_possible_score) {
-    printf("Stalemate!!\n");
-    data.best_score = 0; //Stalemate
+  if(data.alphabeta[WHITE] == alpha && data.alphabeta[BLACK] == beta) {
     data.best_move = nullmove;
+    return 0;
   }
 
   *best_move = data.best_move;
   //printf("Tree node score %d\n", data.best_score);
-  return data.best_score;
+  return data.alphabeta[board->move];
 }
 
