@@ -1,10 +1,12 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #include "grubchess.h"
 #include "ai.h"
+#include "hashtable.h"
 
 char PIECE_SYMBOLS[] = {' ', 'p', 'n', 'b', 'r', 'q', 'k'};
 char* COLOR_NAMES[] = {"WHITE", "BLACK"};
@@ -42,6 +44,10 @@ bool occupies(const Board* board, Position position, enum Color color) {
 
 bool empty(const Board* board, Position position) {
   return !occupied(board, position);
+}
+
+bool board_equal(const Board* b1, const Board* b2) {
+  return memcmp(b1, b2, sizeof(Board)) == 0;
 }
 
 int advance_rank(enum Color color) {
@@ -173,8 +179,8 @@ void apply_valid_move(Board* board, Position from, Position to) {
 
   // If it's from one of the four corners of the board.
   if(square.piece == ROOK
-     && (from.file == 8 || from.file == 0)
-     && (from.rank == 8 || from.rank == 0)) {
+     && (from.file == 7 || from.file == 0)
+     && (from.rank == 7 || from.rank == 0)) {
     bool which_rook = !!from.file; // 0 = A file, 1 = H file
     board->can_castle[board->move][which_rook] = false;
   }
@@ -242,13 +248,12 @@ bool try_move_any(const Board* board, Position from, Position to, ValidMovesCall
   }
   return false;
 }
-      
+
 void valid_moves_from(const Board* board, Position position, ValidMovesCallback callback, void* callback_data) {
   Square square = get_square(board, position);
   if(square.color != board->move) { // You can only move your own pieces!
     return;
   }
-  
   switch(square.piece) {
     case EMPTY:
       return;
@@ -381,6 +386,7 @@ void valid_moves(const Board* board, ValidMovesCallback callback, void* callback
   }
 }
 
+
 void print_move(const Board* board, Position from, Position to) {
   printf("%c ", square_to_char(get_square(board, from)));
   print_position(from);
@@ -398,10 +404,18 @@ void print_move_callback(const Board* board, Position from, Position to, void* d
 }
 
 void save_move_callback(const Board* board, Position from, Position to, void* data) {
-  Position** dat = (Position**)data;
-  *(*dat)++ = from;
-  *(*dat)++ = to;
-  
+  Move** dat = (Move**)data;
+  *(*dat)++ = (Move) {from, to};
+}
+
+void valid_moves_sorted(const Board* board, int (compar) (const void*, const void*, void*), ValidMovesCallback callback, void* callback_data) {
+  Move moves[256];
+  Move* moves_ptr = moves;
+  valid_moves(board, save_move_callback, &moves_ptr);
+  qsort_r(moves, moves_ptr - moves, sizeof(Move), compar, board);
+  for(Move* m=moves; m<moves_ptr; m++) {
+    callback(board, m->from, m->to, callback_data);
+  }
 }
 
 typedef struct FindMoveData {
@@ -421,7 +435,7 @@ bool move_valid(const Board* board, Move move) {
   if(!position_valid(move.from) || !position_valid(move.to)) {
     return false;
   }
-  
+
   FindMoveData data;
   data.found = false;
   data.move = move;
@@ -431,21 +445,21 @@ bool move_valid(const Board* board, Move move) {
 
 
 Move random_move(const Board* board) {
-    Position move_buffer[1000];
-    Position* moves_ptr = move_buffer;
+    Move move_buffer[256];
+    Move* moves_ptr = move_buffer;
     valid_moves(board, save_move_callback, &moves_ptr);
-    int nmoves = (moves_ptr - move_buffer)/2;
+    int nmoves = (moves_ptr - move_buffer);
     int chosen = rand() % nmoves;
     printf("Found %d moves, picking move %d\n", nmoves, chosen);
-    Position from = move_buffer[chosen*2];
-    Position to = move_buffer[chosen*2 +1];
-    Move move = {from, to};
-    return move;
+    return move_buffer[chosen];
 }
 
 Move minimax_engine(const Board* board) {
   Move best_move;
-  int best_score = minimax_score(board, 4, WORST_POSSIBLE_SCORE, BEST_POSSIBLE_SCORE, &best_move);
+  HashTable table;
+  init_hashtable(&table);
+  int best_score = minimax_score(&table, board, 6, WORST_POSSIBLE_SCORE, BEST_POSSIBLE_SCORE, &best_move);
+  free_hashtable(&table);
   printf("Found move with score %d\n", best_score);
   return best_move;
 }
@@ -457,10 +471,10 @@ Move human_engine(const Board* board) {
   while(true) {
     printf("Enter move: ");
     getline(&line, &line_size, stdin);
-    
+
     int from_rank, to_rank;
     char from_file, to_file;
-    if(sscanf(line, "%c%d %c%d", &from_file, &from_rank, &to_file, &to_rank) == 4) {          
+    if(sscanf(line, "%c%d %c%d", &from_file, &from_rank, &to_file, &to_rank) == 4) {
       move.from.rank = from_rank - 1;
       move.from.file = from_file - 'a';
       move.to.rank = to_rank - 1;
@@ -501,9 +515,37 @@ void play_chess(Board* board, EngineCallback* engine) {
   }
 }
 
+void test_hashtable() {
+  HashTable table;
+  init_hashtable(&table);
+  Board board;
+  reset_board(&board);
+  Board board2 = board;
+  apply_valid_move(&board2, (Position){1,3},(Position){3,3});
+
+  printf("Lookup! %d\n", lookup_hashtable(&table, &board));
+  insert_hashtable(&table, &board, 10, 0);
+  insert_hashtable(&table, &board2, 5, 9);
+  printf("Lookup! %d\n", lookup_hashtable(&table, &board));
+  Entry* entry = lookup_hashtable(&table, &board);
+  printf("Found: %d %d %d %d\n", entry->occupied, entry->fullhash, entry->score, entry->depth);
+  grow_hashtable(&table);
+  printf("Lookup! %d\n", lookup_hashtable(&table, &board));
+  printf("Found: %d %d %d %d\n", entry->occupied, entry->fullhash, entry->score, entry->depth);
+
+  entry = lookup_hashtable(&table, &board2);
+  printf("Found: %d %d %d %d\n", entry->occupied, entry->fullhash, entry->score, entry->depth);
+  grow_hashtable(&table);
+  printf("Lookup! %d\n", lookup_hashtable(&table, &board2));
+  printf("Found: %d %d %d %d\n", entry->occupied, entry->fullhash, entry->score, entry->depth);
+
+}
 int main(int argc, char** argv) {
   srand(time(NULL));
   printf("Welcome to GrubChess! Time to get grubby!\n");
+
+
+  //test_hashtable();
 
   Board board;
   reset_board(&board);

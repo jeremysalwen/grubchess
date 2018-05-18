@@ -51,11 +51,12 @@ void set_square(Board* board, Position position, Square value);
 void apply_valid_move(Board* board, Position from, Position to);
 bool occupied(const Board* board, Position position);
 
+bool board_equal(const Board* b1, const Board* b2);
 char square_to_char(Square square);
 void print_board(const Board* board);
 void print_move(const Board* board, Position from, Position to);
 typedef void ValidMovesCallback(const Board*, Position, Position, void*);
 void valid_moves_from(const Board* board, Position position, ValidMovesCallback callback, void* callback_data);
 void valid_moves(const Board* board, ValidMovesCallback callback, void* callback_data);
-
+void valid_moves_sorted(const Board* board, int (compar) (const void*, const void*, void*), ValidMovesCallback callback, void* callback_data);
 #endif

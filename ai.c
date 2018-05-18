@@ -4,6 +4,7 @@
 
 #include "grubchess.h"
 #include "ai.h"
+#include "hashtable.h"
 
 #define SCORE_FRAC 10
 const int CLASSIC_PIECE_VALUE[] = {0,1,3,3,5,9,1000};
@@ -39,13 +40,13 @@ void sum_threats_callback(const Board* board, Position from, Position to, void* 
 }
 int score_threats(const Board* board) {
   Board fixed_move = *board;
-  ThreatsBoard white_threats;
-  ThreatsBoard black_threats;
+  ThreatsBoard threats[NUM_COLORS];
   for(int rank=0; rank<BOARD_WIDTH; rank++) {
     for(int file=0; file<BOARD_WIDTH; file++) {
       Position pos = {rank, file};
-      *get_threat_board(&white_threats, pos) = 0;
-      *get_threat_board(&black_threats, pos) = 0;
+      for(int color=0; color<NUM_COLORS; color++) {
+        *get_threat_board(&threats[color], pos) = 0;
+      }
     }
   }
   
@@ -53,43 +54,38 @@ int score_threats(const Board* board) {
     for(int file=0; file<BOARD_WIDTH; file++) {
       Position pos = {rank, file};
       Square square = get_square(&fixed_move, pos);
-      ThreatsBoard* threats = square.color==WHITE?&white_threats : &black_threats;
+      ThreatsBoard* t = &threats[square.color];
 
-      fixed_move.move = WHITE;
-      Square white_square = square;
-      white_square.color = WHITE;
-      set_square(&fixed_move, pos, white_square);
-      valid_moves_from(&fixed_move, pos, sum_threats_callback, threats);
-      
-      fixed_move.move = BLACK;
-      Square black_square = square;
-      black_square.color = BLACK;
-      set_square(&fixed_move, pos, black_square);
-      valid_moves_from(&fixed_move, pos, sum_threats_callback, threats);
-
+      for(int color=0; color<NUM_COLORS; color++) {
+        fixed_move.move = color;
+        set_square(&fixed_move, pos, (Square) {square.piece, color});
+        valid_moves_from(&fixed_move, pos, sum_threats_callback, t);
+      }
       set_square(&fixed_move, pos, square);
     }
   }
+  
   int total_score = 0;
   for(int rank=0; rank<BOARD_WIDTH; rank++) {
     for(int file=0; file<BOARD_WIDTH; file++) {
       Position pos = {rank, file};
-      Square square = get_square(&fixed_move, pos);
+      Square square = get_square(board, pos);
       if(square.piece != EMPTY) {
         int valence = square.color == WHITE ? 1:-1;
-        int white_threat = *get_threat_board(&white_threats, pos);
-        int black_threat = *get_threat_board(&black_threats, pos);
+        int white_threat = *get_threat_board(&threats[WHITE], pos);
+        int black_threat = *get_threat_board(&threats[BLACK], pos);
         int threat = white_threat - black_threat;
         //printf("total threat! %c %d %d %d %d\n", square_to_char(square), white_threat, black_threat, threat, threat*valence);
         if(threat * valence < 0) {
-          total_score -= valence * CLASSIC_PIECE_VALUE[square.piece] * SCORE_FRAC;
+          //Undefended pieces are worth 80% of their value if they can move, 20% of their value
+          //Counts 80% on their turn, 20% on your turn.
+          int multiplier = square.color == board->move ? SCORE_FRAC * 2/10 : SCORE_FRAC * 8/10;
+          total_score -= valence * CLASSIC_PIECE_VALUE[square.piece] * multiplier;
         }
       }
     }
   }
   
-  // Remove 80% of score for undefended pieces.
-  total_score = total_score * 8 / 10;
   //printf("total score %d\n", total_score);
   return total_score;
 }
@@ -103,6 +99,7 @@ bool score_is_checkmate(int score) {
 }
 
 typedef struct SearchCallbackData {
+  HashTable* table;
   int max_depth;
   int alphabeta[NUM_COLORS];
   Move best_move;
@@ -114,7 +111,7 @@ void search_callback(const Board* board, Position from, Position to, void* d) {
   SearchCallbackData* data = (SearchCallbackData*)d;
   if(data->alphabeta[WHITE] >= data->alphabeta[BLACK]) {
     //printf("Pruned %d %d\n", data->alphabeta[WHITE], data->alphabeta[BLACK]);
-    //return;
+    return;
   }
 
   int valence = board->move == WHITE? 1: -1;
@@ -123,8 +120,7 @@ void search_callback(const Board* board, Position from, Position to, void* d) {
   //print_move(board, from, to);
   apply_valid_move(&new_board, from, to);
   Move ignored_move; // We don't care what the best child move is
-  int new_score = minimax_score(&new_board, data->max_depth, data->alphabeta[WHITE], data->alphabeta[BLACK], &ignored_move);
- 
+  int new_score = minimax_score(data->table, &new_board, data->max_depth, data->alphabeta[WHITE], data->alphabeta[BLACK], &ignored_move);
   
   //printf("valence %d best_score %d %d %d move %d\n", valence, data->alphabeta[WHITE], data->alphabeta[BLACK], new_score, board->move);
 
@@ -137,30 +133,62 @@ void search_callback(const Board* board, Position from, Position to, void* d) {
 }
 
 
-int minimax_score(const Board* board, int max_depth, int alpha, int beta, Move* best_move) {
+int move_order_comparator(const void* m1, const void* m2, void* b) {
+  const Move* move1 = (const Move*) m1;
+  const Move* move2 = (const Move*) m2;
+  const Board* board = (const Board*) b;
+  Square square1 = get_square(board, move1->to);
+  Square square2 = get_square(board, move2->to);
+
+  int capture_diff = CLASSIC_PIECE_VALUE[square2.piece] - CLASSIC_PIECE_VALUE[square1.piece];
+
+  return capture_diff;
+}
+
+void update_table(HashTable* table, const Board* board, int score, int depth) {
+  if(table != NULL) {
+    insert_hashtable(table, board, score, depth);
+  }
+}
+
+int minimax_score(HashTable* table, const Board* board, int max_depth, int alpha, int beta, Move* best_move) {
   Move nullmove = {{0,0},{0,0}};
 
+  if(table != NULL) {
+    Entry* entry = lookup_hashtable(table, board);
+    // Make sure the depth of the cached entry is at least as much as our current search.
+    if(entry != NULL && max_depth <= entry->depth) {
+      *best_move = nullmove;
+      return entry->score;
+    }
+  }
+  
   //printf("Searching, with depth %d\n", max_depth);
   //print_board(board);
   int my_score = score(board); // Default score is our heuristic function.
   if(max_depth ==0 || my_score > CHECKMATE_SCORE_THRESHOLD || my_score < -CHECKMATE_SCORE_THRESHOLD) {
     //printf("Leaf node score %d!\n", my_score);
     *best_move = nullmove;
+    // TODO maybe cache leaf nodes?
     return my_score;
   }
     
   SearchCallbackData data;
+  data.table = table;
   data.max_depth = max_depth-1;
   data.alphabeta[WHITE] = alpha;
   data.alphabeta[BLACK] = beta;
-  valid_moves(board, search_callback, &data);
+  valid_moves_sorted(board, move_order_comparator, search_callback, &data);
   if(data.alphabeta[WHITE] == alpha && data.alphabeta[BLACK] == beta) {
-    data.best_move = nullmove;
-    return data.alphabeta[board->move];
+    *best_move = nullmove;
+    int score = data.alphabeta[board->move];
+    update_table(table, board, score, max_depth);
+    return score;
   }
 
   *best_move = data.best_move;
   //printf("Tree node score %d\n", data.best_score);
-  return data.alphabeta[board->move];
+  int score = data.alphabeta[board->move];
+  update_table(table, board, score, max_depth);
+  return score;
 }
-
