@@ -1,10 +1,11 @@
 #ifndef HASHTABLE_H
 #define HASHTABLE_H
 
+#include <stdint.h>
 
 typedef struct Entry {
   bool occupied;
-  int fullhash;
+  uint64_t fullhash;
   int score;
   int depth;
 } Entry;

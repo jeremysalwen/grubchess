@@ -25,7 +25,7 @@ void free_hashtable(HashTable* table) {
 
 #define FNV1_OFFSET_BASIS 14695981039346656037ull
 #define FNV1_PRIME 1099511628211
-int FNV1Hash(const char* data, int len) {
+uint64_t FNV1Hash(const char* data, int len) {
   uint64_t hash = FNV1_OFFSET_BASIS;
   for(int i=0; i<len; i++) {
     hash ^= data[i];
@@ -34,7 +34,7 @@ int FNV1Hash(const char* data, int len) {
   return hash;
 }
 
-int hash_board(const Board* board) {
+uint64_t hash_board(const Board* board) {
   return FNV1Hash((const char*)board, sizeof(Board));
 }
 
@@ -42,7 +42,7 @@ int get_mask(const HashTable* table) {
   return (1 << table->size_pow) - 1;
 }
 
-int hash_to_bucket(const HashTable* table, int fullhash) {
+int hash_to_bucket(const HashTable* table, uint64_t fullhash) {
   return fullhash & get_mask(table);
 }
 
@@ -50,7 +50,7 @@ int next_bucket(const HashTable* table, int bucket) {
   return (bucket+1) & get_mask(table);  
 }
 
-void do_insert(HashTable* table, int hash, int score, int depth) {
+void do_insert(HashTable* table, uint64_t hash, int score, int depth) {
   int bucket = hash_to_bucket(table, hash);
   // Linear Probing
   while(table->entries[bucket].occupied) {
@@ -80,7 +80,6 @@ void insert_hashtable(HashTable* table, const Board* board, int score, int depth
 }
 
 void grow_hashtable(HashTable* table) {
-  printf("Resizing hash table!\n");
   int old_size = pow_to_size(table->size_pow);
   int new_size_pow = table->size_pow + 1;
   HashTable newtable = {calloc(pow_to_size(new_size_pow), sizeof(Entry)), new_size_pow, table->count};

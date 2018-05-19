@@ -154,16 +154,16 @@ void print_position(Position position) { // chess notation.
 }
 
 void print_board(const Board* board) {
-  printf("----------\n");
+  printf("------------------\n");
   for(int rank = BOARD_WIDTH - 1; rank >=0; rank--) {
     printf("|");
     for(int file = 0; file < BOARD_WIDTH; file++) {
       Position pos = {rank, file};
-      printf("%c", square_to_char(get_square(board, pos)));
+      printf("%c ", square_to_char(get_square(board, pos)));
     }
     printf("|\n");
   }
-  printf("----------\n");
+  printf("------------------\n");
   printf("%s to play.\n", COLOR_NAMES[board->move]);
 }
 
