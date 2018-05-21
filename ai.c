@@ -6,7 +6,7 @@
 #include "ai.h"
 #include "hashtable.h"
 
-#define SCORE_FRAC 10
+#define SCORE_FRAC 100
 const int CLASSIC_PIECE_VALUE[] = {0,1,3,3,5,9,1000};
 const int CHECKMATE_SCORE_THRESHOLD = 500 * SCORE_FRAC;
 int score_material(const Board* board) {
@@ -38,7 +38,8 @@ void sum_threats_callback(const Board* board, Position from, Position to, void* 
     *threatlevel += 1;
   }
 }
-int score_threats(const Board* board) {
+
+int score_see(const Board* board) {
   Board fixed_move = *board;
   ThreatsBoard threats[NUM_COLORS];
   for(int rank=0; rank<BOARD_WIDTH; rank++) {
@@ -71,27 +72,51 @@ int score_threats(const Board* board) {
       Position pos = {rank, file};
       Square square = get_square(board, pos);
       if(square.piece != EMPTY) {
-        int valence = square.color == WHITE ? 1:-1;
-        int white_threat = *get_threat_board(&threats[WHITE], pos);
-        int black_threat = *get_threat_board(&threats[BLACK], pos);
-        int threat = white_threat - black_threat;
+        const int valence = square.color == WHITE ? 1:-1;
+        const int white_threat = *get_threat_board(&threats[WHITE], pos);
+        const int black_threat = *get_threat_board(&threats[BLACK], pos);
+        const int threat = white_threat - black_threat;
         //printf("total threat! %c %d %d %d %d\n", square_to_char(square), white_threat, black_threat, threat, threat*valence);
+        const int piece_value = valence * CLASSIC_PIECE_VALUE[square.piece];
+        int multiplier = SCORE_FRAC;
+        //Undefended pieces are worth 80% of their value on your turn,
+        //20% of their value on enemy turn.
         if(threat * valence < 0) {
-          //Undefended pieces are worth 80% of their value if they can move, 20% of their value
-          //Counts 80% on their turn, 20% on your turn.
-          int multiplier = square.color == board->move ? SCORE_FRAC * 2/10 : SCORE_FRAC * 8/10;
-          total_score -= valence * CLASSIC_PIECE_VALUE[square.piece] * multiplier;
+          if(square.color == board->move) {
+            multiplier = SCORE_FRAC * 8 / 10;
+          } else {
+            multiplier = SCORE_FRAC * 2 / 10;
+          }
         }
+        total_score += piece_value * multiplier;
       }
     }
   }
-  
-  //printf("total score %d\n", total_score);
+
   return total_score;
 }
 
+
+
+void count_moves_callback(const Board* board, Position from, Position to, void* data) {
+  int* moves = (int*)data;
+  (*moves)++;
+}
+
+int score_activity(const Board* board) {
+  Board fixed_move = *board;
+
+  int possible_moves[NUM_COLORS] = {0};
+  for(int color=0; color<NUM_COLORS; color++) {
+    fixed_move.move = color;
+    valid_moves(&fixed_move, count_moves_callback, &possible_moves[color]);
+  }
+  
+  int score = possible_moves[WHITE] - possible_moves[BLACK];
+  return score;
+}
 int score(const Board* board) {
-  return score_material(board) + score_threats(board);
+  return score_see(board) + score_activity(board);
 }
 
 bool score_is_checkmate(int score) {

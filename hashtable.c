@@ -12,7 +12,7 @@ int pow_to_size(int size_pow) {
 }
 
 void init_hashtable(HashTable* table) {
-  table->size_pow = 21;
+  table->size_pow = 16;
   table->entries = calloc(pow_to_size(table->size_pow), sizeof(Entry));
   table->count = 0;
 }

@@ -4,8 +4,8 @@
 #include "grubchess.h"
 #include "hashtable.h"
 
-#define WORST_POSSIBLE_SCORE -100000
-#define BEST_POSSIBLE_SCORE 100000
+#define WORST_POSSIBLE_SCORE -1000000
+#define BEST_POSSIBLE_SCORE 1000000
 int minimax_score(HashTable* table, const Board* board, int max_depth, int alpha, int beta, Move* best_move);
 
 #endif

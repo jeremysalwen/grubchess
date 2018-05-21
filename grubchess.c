@@ -72,6 +72,7 @@ void fill_rank(Board* board, int rank, Square square) {
 
 void reset_board(Board* board) {
   board->move = WHITE; // White to move.
+  board->en_passant = -1;
   board->can_castle[WHITE][0] = true;
   board->can_castle[BLACK][0] = true;
   board->can_castle[WHITE][1] = true;
@@ -171,20 +172,33 @@ void print_board(const Board* board) {
 void apply_valid_move(Board* board, Position from, Position to) {
   Square empty = {EMPTY, BLACK};
   Square square =  get_square(board, from);
+
+  board->en_passant = -1;
   if(square.piece == PAWN) {
+    //Promotion
     if(to.rank == 7 || to.rank == 0) {
       square.piece = QUEEN;
     }
+
+    //En passant captures
+    if(get_square(board, to).piece == EMPTY) {
+      set_square(board, (Position) {to.rank - advance_rank(board->move), to.file}, empty);
+    }
+
+    //Record en_passant possibility for next turn.
+    if(abs(to.rank - from.rank) == 2) {
+      board->en_passant = to.file;
+    }
   }
 
-  // If it's from one of the four corners of the board.
+  // If it's from one of the four corners of the board you can't castle there now
   if(square.piece == ROOK
      && (from.file == 7 || from.file == 0)
      && (from.rank == 7 || from.rank == 0)) {
     bool which_rook = !!from.file; // 0 = A file, 1 = H file
     board->can_castle[board->move][which_rook] = false;
   }
-  
+ 
   if(square.piece == KING) {
     board->can_castle[board->move][0] = false;
     board->can_castle[board->move][1] = false;
@@ -249,6 +263,18 @@ bool try_move_any(const Board* board, Position from, Position to, ValidMovesCall
   return false;
 }
 
+bool try_capture_en_passant(const Board* board, Position from, Position to, ValidMovesCallback callback, void* callback_data) {
+  if(!position_valid(to)) {
+    return false;
+  }
+  int en_passant_rank = board->move  == WHITE ? 5 : 2;
+  if(to.file == board->en_passant && to.rank == en_passant_rank) {
+    callback(board, from, to, callback_data);
+    return true;
+  }
+  return false;
+}
+
 void valid_moves_from(const Board* board, Position position, ValidMovesCallback callback, void* callback_data) {
   Square square = get_square(board, position);
   if(square.color != board->move) { // You can only move your own pieces!
@@ -270,9 +296,11 @@ void valid_moves_from(const Board* board, Position position, ValidMovesCallback 
         }
         Position left = {position.rank + advance_rank(square.color), position.file-1};
         try_move_capture(board, position, left, callback, callback_data);
+        try_capture_en_passant(board, position, left, callback, callback_data);
 
         Position right = {position.rank + advance_rank(square.color), position.file+1};
         try_move_capture(board, position, right, callback, callback_data);
+        try_capture_en_passant(board, position, right, callback, callback_data);
       }
       break;
     case KNIGHT:
