@@ -61,4 +61,15 @@ typedef void ValidMovesCallback(const Board*, Position, Position, void*);
 void valid_moves_from(const Board* board, Position position, ValidMovesCallback callback, void* callback_data);
 void valid_moves(const Board* board, ValidMovesCallback callback, void* callback_data);
 void valid_moves_sorted(const Board* board, int (compar) (const void*, const void*, void*), ValidMovesCallback callback, void* callback_data);
+
+
+typedef struct ThreatsBoard {
+  int squares[BOARD_WIDTH*BOARD_WIDTH];
+} ThreatsBoard;
+
+
+int* get_threat_board(ThreatsBoard* board, Position pos);
+
+void sum_threats_callback(const Board* board, Position from, Position to, void* data);
+
 #endif

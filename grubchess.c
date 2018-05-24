@@ -198,7 +198,7 @@ void apply_valid_move(Board* board, Position from, Position to) {
     bool which_rook = !!from.file; // 0 = A file, 1 = H file
     board->can_castle[board->move][which_rook] = false;
   }
- 
+
   if(square.piece == KING) {
     board->can_castle[board->move][0] = false;
     board->can_castle[board->move][1] = false;
@@ -372,23 +372,43 @@ void valid_moves_from(const Board* board, Position position, ValidMovesCallback 
       if(position.file == 4 && position.rank == board->move * 7) {
         for(int rook = 0; rook < 2; rook++) {
           int direction = rook? 1 : -1;
-          
+
           if(board->can_castle[board->move][rook]) {
-            bool clear = true;
-            for(int file = position.file + direction; file != rook * 7; file+=direction) {
-              Position pos = {position.rank, file};
-              if(get_square(board, pos).piece != EMPTY) {
-                clear = false;
+            if(get_square(board,(Position) {position.rank, rook*7}).piece == ROOK) {
+              
+              bool clear = true;
+              for(int file = position.file + direction; file != rook * 7; file+=direction) {
+                Position pos = {position.rank, file};
+                if(get_square(board, pos).piece != EMPTY) {
+                  clear = false;
+                }
               }
-            }
-            if(clear) {
-              Position final = {position.rank, position.file + direction * 2};
-              callback(board, position, final, callback_data);
+              if(clear) {
+                Position final = {position.rank, position.file + direction * 2};
+                
+                // Validate that we don't castle into/through/out of check.
+                Board newboard = *board;
+                //We check the threats AFTER the move is applied, so there is no possibility
+                //of an infinite loop.
+                apply_valid_move(&newboard, position, final);
+                ThreatsBoard threats= {0};
+                valid_moves(&newboard, sum_threats_callback, &threats);
+                bool in_check = false;
+                for(int file = position.file; file != rook * 7; file+=direction) {
+                  int nthreats = *get_threat_board(&threats, (Position) {position.rank, file});
+                  if(nthreats) {
+                    in_check = true;
+                  }
+                }
+                if(!in_check) {
+                  callback(board, position, final, callback_data);
+                }
+              }
             }
           }
         }
       }
-      
+
       for(int fwd=-1; fwd<2; fwd++) {
         for(int side=-1; side<2; side++) {
           if(fwd == 0 && side==0) {
@@ -414,6 +434,16 @@ void valid_moves(const Board* board, ValidMovesCallback callback, void* callback
   }
 }
 
+
+int* get_threat_board(ThreatsBoard* board, Position pos) {
+  return &board->squares[pos.rank*BOARD_WIDTH + pos.file];
+}
+
+void sum_threats_callback(const Board* board, Position from, Position to, void* data) {
+  ThreatsBoard* threats = (ThreatsBoard*)data;
+  int* threatlevel = get_threat_board(threats, to);
+  *threatlevel += 1;
+}
 
 void print_move(const Board* board, Position from, Position to) {
   printf("%c ", square_to_char(get_square(board, from)));
@@ -528,7 +558,7 @@ typedef Move EngineCallback(const Board* board);
 
 void play_chess(Board* board, EngineCallback* engine) {
   int game_length=0;
-  while(true) {
+  while(game_length < 10) {
     printf("%d Moves played so far\n", game_length);
     print_board(board);
 

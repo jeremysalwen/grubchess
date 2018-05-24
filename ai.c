@@ -1,6 +1,7 @@
 #include <stdbool.h>
 #include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "grubchess.h"
 #include "ai.h"
@@ -20,23 +21,6 @@ int score_material(const Board* board) {
     }
   }
   return total;
-}
-
-typedef struct ThreatsBoard {
-  int squares[BOARD_WIDTH*BOARD_WIDTH];
-} ThreatsBoard;
-
-int* get_threat_board(ThreatsBoard* board, Position pos) {
-  return &board->squares[pos.rank*BOARD_WIDTH + pos.file];
-}
-
-void sum_threats_callback(const Board* board, Position from, Position to, void* data) {
-  ThreatsBoard* threats = (ThreatsBoard*)data;
-  Square square = get_square(board, to);
-  if(square.piece != EMPTY) {
-    int* threatlevel = get_threat_board(threats, to);
-    *threatlevel += 1;
-  }
 }
 
 int score_see(const Board* board) {
@@ -113,10 +97,30 @@ int score_activity(const Board* board) {
   }
   
   int score = possible_moves[WHITE] - possible_moves[BLACK];
-  return score;
+  return score*SCORE_FRAC / 100;
 }
+
+int score_pawn_advancement(const Board* board) {
+  int total_score = 0;
+  for(int rank=0; rank<BOARD_WIDTH; rank++) {
+    for(int file=0; file<BOARD_WIDTH; file++) {
+      Position pos = {rank, file};
+      Square square = get_square(board, pos);
+      int valence = square.color == WHITE? 1:-1;
+      int target_rank = (square.color == WHITE) * 7;
+      if(square.piece == PAWN) {
+        int distance = abs(pos.rank - target_rank);
+        int score = 3-distance;
+        if(score<0) score = 0;
+        total_score += score * valence;
+      }
+    }
+  }
+  return total_score * SCORE_FRAC / 3;
+}
+
 int score(const Board* board) {
-  return score_see(board) + score_activity(board);
+  return score_see(board) + score_activity(board) + score_pawn_advancement(board);
 }
 
 bool score_is_checkmate(int score) {
