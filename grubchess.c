@@ -513,13 +513,19 @@ Move random_move(const Board* board) {
 }
 
 Move minimax_engine(const Board* board) {
-  Move best_move;
+  int depth = 6;
+  Move best_moves[depth];
   HashTable table;
   init_hashtable(&table);
-  int best_score = minimax_score(&table, board, 6, WORST_POSSIBLE_SCORE, BEST_POSSIBLE_SCORE, &best_move);
+  int best_score = minimax_score(&table, board, depth, WORST_POSSIBLE_SCORE, BEST_POSSIBLE_SCORE, best_moves);
   free_hashtable(&table);
   printf("Found move with score %d\n", best_score);
-  return best_move;
+  for(int i=0; i<depth; i++) {
+    printf(" - ");
+    print_move_t(board, best_moves[i]);
+  }
+  printf("\n");
+  return best_moves[0];
 }
 
 Move human_engine(const Board* board) {
@@ -558,7 +564,7 @@ typedef Move EngineCallback(const Board* board);
 
 void play_chess(Board* board, EngineCallback* engine) {
   int game_length=0;
-  while(game_length < 10) {
+  while(true) {
     printf("%d Moves played so far\n", game_length);
     print_board(board);
 

@@ -131,7 +131,7 @@ typedef struct SearchCallbackData {
   HashTable* table;
   int max_depth;
   int alphabeta[NUM_COLORS];
-  Move best_move;
+  Move* best_move;
 } SearchCallbackData;
 
 
@@ -148,15 +148,18 @@ void search_callback(const Board* board, Position from, Position to, void* d) {
   Board new_board = *board;
   //print_move(board, from, to);
   apply_valid_move(&new_board, from, to);
-  Move ignored_move; // We don't care what the best child move is
-  int new_score = minimax_score(data->table, &new_board, data->max_depth, data->alphabeta[WHITE], data->alphabeta[BLACK], &ignored_move);
+  Move child_moves[data->max_depth];
+  int new_score = minimax_score(data->table, &new_board, data->max_depth, data->alphabeta[WHITE], data->alphabeta[BLACK], child_moves);
   
   //printf("valence %d best_score %d %d %d move %d\n", valence, data->alphabeta[WHITE], data->alphabeta[BLACK], new_score, board->move);
 
   Move move = {from, to};
   if((new_score - data->alphabeta[board->move]) * valence > 0) {
     data->alphabeta[board->move] = new_score;
-    data->best_move = move;
+    data->best_move[0] = move;
+    for(int i=0; i<data->max_depth; i++) {
+      data->best_move[i+1] = child_moves[i];
+    }
   }
   //printf("valence %d best_score %d %d %d gap %d\n", valence, data->alphabeta[WHITE], data->alphabeta[BLACK], new_score, (new_score - data->alphabeta[board->move]));
 }
@@ -187,7 +190,6 @@ int minimax_score(HashTable* table, const Board* board, int max_depth, int alpha
     Entry* entry = lookup_hashtable(table, board);
     // Make sure the depth of the cached entry is at least as much as our current search.
     if(entry != NULL && max_depth <= entry->depth) {
-      *best_move = nullmove;
       return entry->score;
     }
   }
@@ -197,7 +199,6 @@ int minimax_score(HashTable* table, const Board* board, int max_depth, int alpha
   int my_score = score(board); // Default score is our heuristic function.
   if(max_depth ==0 || my_score > CHECKMATE_SCORE_THRESHOLD || my_score < -CHECKMATE_SCORE_THRESHOLD) {
     //printf("Leaf node score %d!\n", my_score);
-    *best_move = nullmove;
     // TODO maybe cache leaf nodes?
     return my_score;
   }
@@ -207,15 +208,14 @@ int minimax_score(HashTable* table, const Board* board, int max_depth, int alpha
   data.max_depth = max_depth-1;
   data.alphabeta[WHITE] = alpha;
   data.alphabeta[BLACK] = beta;
+  data.best_move = best_move;
   valid_moves_sorted(board, move_order_comparator, search_callback, &data);
   if(data.alphabeta[WHITE] == alpha && data.alphabeta[BLACK] == beta) {
-    *best_move = nullmove;
     int score = data.alphabeta[board->move];
     update_table(table, board, score, max_depth);
     return score;
   }
 
-  *best_move = data.best_move;
   //printf("Tree node score %d\n", data.best_score);
   int score = data.alphabeta[board->move];
   update_table(table, board, score, max_depth);
