@@ -2,6 +2,7 @@
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "grubchess.h"
 #include "ai.h"
@@ -120,7 +121,7 @@ int score_pawn_advancement(const Board* board) {
 }
 
 int score(const Board* board) {
-  return score_see(board) + score_activity(board) + score_pawn_advancement(board);
+  return score_material(board) + score_activity(board) + score_pawn_advancement(board);
 }
 
 bool score_is_checkmate(int score) {
@@ -135,6 +136,15 @@ typedef struct SearchCallbackData {
 } SearchCallbackData;
 
 
+void search_stand_pat(const Board* board, SearchCallbackData* data, int current_score) {
+  int valence = board->move == WHITE ? 1:-1;
+  // If standing pat satisfies the enemy cutoff
+  if((current_score - data->alphabeta[board->move]) * valence > 0) {
+    data->alphabeta[board->move] = current_score;
+    // Dummy move to indicate stand pat evaluation.
+    data->best_move[0]= (Move){{0,0},{1,1}};
+  }
+}
 
 void search_callback(const Board* board, Position from, Position to, void* d) {
   SearchCallbackData* data = (SearchCallbackData*)d;
@@ -143,25 +153,34 @@ void search_callback(const Board* board, Position from, Position to, void* d) {
     return;
   }
 
+  Square to_square = get_square(board, to);
+  if(data->max_depth <= 0 && to_square.piece == EMPTY) {
+    return;
+  }
+  //printf("score: %d\n", score(board));
+  //print_board(board);
+
+  
   int valence = board->move == WHITE? 1: -1;
 
   Board new_board = *board;
   //print_move(board, from, to);
   apply_valid_move(&new_board, from, to);
-  Move child_moves[data->max_depth];
-  int new_score = minimax_score(data->table, &new_board, data->max_depth, data->alphabeta[WHITE], data->alphabeta[BLACK], child_moves);
-  
-  //printf("valence %d best_score %d %d %d move %d\n", valence, data->alphabeta[WHITE], data->alphabeta[BLACK], new_score, board->move);
+
+  int child_depth = data->max_depth - 1;
+  Move child_moves[child_depth+100];
+  memset(child_moves, 0, sizeof(Move)*(child_depth+100));
+  int new_score = minimax_score(data->table, &new_board, child_depth, data->alphabeta[WHITE], data->alphabeta[BLACK], child_moves);
 
   Move move = {from, to};
+
   if((new_score - data->alphabeta[board->move]) * valence > 0) {
     data->alphabeta[board->move] = new_score;
     data->best_move[0] = move;
-    for(int i=0; i<data->max_depth; i++) {
+    for(int i=0; i<child_depth+100; i++) {
       data->best_move[i+1] = child_moves[i];
     }
   }
-  //printf("valence %d best_score %d %d %d gap %d\n", valence, data->alphabeta[WHITE], data->alphabeta[BLACK], new_score, (new_score - data->alphabeta[board->move]));
 }
 
 
@@ -179,7 +198,9 @@ int move_order_comparator(const void* m1, const void* m2, void* b) {
 
 void update_table(HashTable* table, const Board* board, int score, int depth) {
   if(table != NULL) {
-    insert_hashtable(table, board, score, depth);
+    if(depth > 0) {
+      insert_hashtable(table, board, score, depth);
+    }
   }
 }
 
@@ -193,22 +214,26 @@ int minimax_score(HashTable* table, const Board* board, int max_depth, int alpha
       return entry->score;
     }
   }
-  
+
   //printf("Searching, with depth %d\n", max_depth);
   //print_board(board);
   int my_score = score(board); // Default score is our heuristic function.
-  if(max_depth ==0 || my_score > CHECKMATE_SCORE_THRESHOLD || my_score < -CHECKMATE_SCORE_THRESHOLD) {
-    //printf("Leaf node score %d!\n", my_score);
+  if(my_score > CHECKMATE_SCORE_THRESHOLD || my_score < -CHECKMATE_SCORE_THRESHOLD) {
     // TODO maybe cache leaf nodes?
     return my_score;
   }
-    
+
+
   SearchCallbackData data;
   data.table = table;
-  data.max_depth = max_depth-1;
+  data.max_depth = max_depth;
   data.alphabeta[WHITE] = alpha;
   data.alphabeta[BLACK] = beta;
   data.best_move = best_move;
+
+  if(data.max_depth <= 0) {
+    search_stand_pat(board, &data, my_score);
+  }
   valid_moves_sorted(board, move_order_comparator, search_callback, &data);
   if(data.alphabeta[WHITE] == alpha && data.alphabeta[BLACK] == beta) {
     int score = data.alphabeta[board->move];
@@ -216,7 +241,6 @@ int minimax_score(HashTable* table, const Board* board, int max_depth, int alpha
     return score;
   }
 
-  //printf("Tree node score %d\n", data.best_score);
   int score = data.alphabeta[board->move];
   update_table(table, board, score, max_depth);
   return score;

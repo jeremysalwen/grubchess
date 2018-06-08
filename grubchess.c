@@ -513,14 +513,15 @@ Move random_move(const Board* board) {
 }
 
 Move minimax_engine(const Board* board) {
-  int depth = 6;
-  Move best_moves[depth];
+  int depth = 8;
+  Move best_moves[depth+100];
+  memset(best_moves, 0, sizeof(Move) * (depth+100));
   HashTable table;
   init_hashtable(&table);
   int best_score = minimax_score(&table, board, depth, WORST_POSSIBLE_SCORE, BEST_POSSIBLE_SCORE, best_moves);
   free_hashtable(&table);
   printf("Found move with score %d\n", best_score);
-  for(int i=0; i<depth; i++) {
+  for(int i=0; i<depth+5; i++) {
     printf(" - ");
     print_move_t(board, best_moves[i]);
   }
@@ -604,15 +605,27 @@ void test_hashtable() {
   printf("Found: %d %d %d %d\n", entry->occupied, entry->fullhash, entry->score, entry->depth);
 
 }
+
+void test_evaluation() {
+  Board board;
+  reset_board(&board);
+  print_board(&board);
+  apply_valid_move(&board, (Position) {1, 4}, (Position) {3, 4});
+  apply_valid_move(&board, (Position) {6, 4}, (Position) {5, 4});
+  apply_valid_move(&board, (Position) {0, 3}, (Position) {3, 6});
+  apply_valid_move(&board, (Position) {7, 3}, (Position) {5, 5});
+  print_board(&board);
+  //printf("SCORED: %d %d %d\n", score_material(&board), score_activity(&board),score_pawn_advancement(&board));
+}
 int main(int argc, char** argv) {
   srand(time(NULL));
   printf("Welcome to GrubChess! Time to get grubby!\n");
 
 
   //test_hashtable();
-
+  //test_evaluation();
   Board board;
   reset_board(&board);
-  play_chess(&board, minimax_engine);
+  play_chess(&board, human_vs_computer_engine);
   print_board(&board); 
 }
